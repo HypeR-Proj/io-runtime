@@ -28,8 +28,8 @@ pub(super) struct Adopted {
     pub worker: Option<Worker>,
     // Owners outlive every guest access. No backing or physical assignment is
     // recreated by adoption; native filesystem traffic keeps its original path.
-    pub _physical: OwnedHandle<PhysicalDeviceObject>,
-    pub _network: Option<OwnedHandle<PhysicalDeviceObject>>,
+    pub physical: OwnedHandle<PhysicalDeviceObject>,
+    pub network: Option<OwnedHandle<PhysicalDeviceObject>>,
     pub _native_memory: Vec<OwnedHandle<GuestMemoryObject>>,
     pub native_mailboxes: Vec<Mailbox>,
 }
@@ -170,8 +170,8 @@ pub(super) fn receive(startup: &mut Startup<'_>) -> Result<Adopted> {
         log: GuestLog::restore(line_start),
         broker,
         worker,
-        _physical: physical,
-        _network: network,
+        physical,
+        network,
         _native_memory: native_memory,
         native_mailboxes,
     })

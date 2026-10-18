@@ -7,6 +7,7 @@ mod adopt;
 #[cfg(not(feature = "console-test"))]
 mod agent;
 mod broker;
+mod faults;
 
 use hyper_io_runtime_system::guest::install::InstalledGuest;
 use hyper_io_runtime_system::guest_log::GuestLog;
@@ -78,17 +79,18 @@ pub(super) fn main() -> ExitCode {
     }
 }
 fn serve(owner: &mut adopt::Adopted) -> Result<()> {
+    let mut faults = faults::Monitor::new();
     #[cfg(not(feature = "console-test"))]
     let mut agent = agent::Agent::new(hyper_io_runtime_system::guest::install::RAM_BYTES);
     loop {
-        if !pump_guest(&mut owner.guest, &mut owner.log)? {
-            return Ok(());
-        }
-        #[cfg(not(feature = "console-test"))]
         let now = hyper_os::time::monotonic_now()
             .map_err(show)?
             .as_nanoseconds()
             / 1_000_000;
+        faults.poll(owner, now);
+        if !pump_guest(&mut owner.guest, &mut owner.log)? {
+            return Ok(());
+        }
         #[cfg(not(feature = "console-test"))]
         let agent_progress = owner
             .worker
@@ -138,11 +140,13 @@ fn serve(owner: &mut adopt::Adopted) -> Result<()> {
             .map_or(hyper_os::DEADLINE_INFINITE, |broker| broker.next_deadline());
         #[cfg(not(feature = "console-test"))]
         let limit = limit.min(agent.deadline());
+        faults.append_waits(owner, &mut items);
         match wait::wait_many(&items, limit) {
             Ok(event) if event.index == 2 => {
                 return Err("unexpected idle backend control event".into());
             }
-            Ok(_) | Err(hyper_os::Error::Status(hyper_os::Status::TIMED_OUT)) => (),
+            Ok(event) => faults.wake(event.index),
+            Err(hyper_os::Error::Status(hyper_os::Status::TIMED_OUT)) => (),
             Err(error) => return Err(show(error)),
         }
     }
