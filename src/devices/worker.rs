@@ -110,7 +110,16 @@ pub fn resume(
     }
     let physical = match mode {
         WorkerMode::None => None,
-        _ => Some(physical.duplicate(physical.info()?.rights)?),
+        // Match the predecessor's register/IRQ-only worker authority. This is
+        // handle attenuation, not isolation within the shared process table.
+        _ => Some(
+            physical.duplicate(
+                hyper_os::Rights::READ
+                    .union(hyper_os::Rights::WRITE)
+                    .union(hyper_os::Rights::WAIT)
+                    .union(hyper_os::Rights::ACK_INTERRUPT),
+            )?,
+        ),
     };
     // Share the same process-local capabilities. Installed VM/vCPU handles
     // intentionally cannot be duplicated through the Native capability API.

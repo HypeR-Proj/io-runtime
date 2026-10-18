@@ -141,8 +141,10 @@ impl Description {
                 .iter()
                 .find(|slot| slot.kind == Kind::StorageDevice)
                 .ok_or("missing userspace physical device")?;
-            let required = hyper_os::Rights::WRITE
+            let required = hyper_os::Rights::READ
+                .union(hyper_os::Rights::WRITE)
                 .union(hyper_os::Rights::WAIT)
+                .union(hyper_os::Rights::ACK_INTERRUPT)
                 .union(hyper_os::Rights::DUPLICATE);
             if hyper_os::Rights::from_bits(physical.rights)
                 .is_none_or(|rights| !rights.contains(required))

@@ -90,6 +90,39 @@ fn malformed_or_attenuated_inventories_are_rejected_before_live_receive() {
 }
 
 #[test]
+fn physical_worker_requires_every_register_and_irq_right_before_commit() -> Result<(), &'static str>
+{
+    use hyper_os::Rights;
+    let mut original = offer();
+    original.worker = WorkerMode::Sdhci;
+    let index = original
+        .slots
+        .iter()
+        .position(|slot| slot.kind == Kind::StorageDevice)
+        .ok_or("missing storage device")?;
+    let required = [
+        Rights::READ,
+        Rights::WRITE,
+        Rights::WAIT,
+        Rights::ACK_INTERRUPT,
+        Rights::DUPLICATE,
+    ];
+    for right in required {
+        original.slots[index].rights |= right.bits();
+    }
+    assert_eq!(original.validate(), Ok(()));
+    for right in required {
+        let mut missing = original.clone();
+        missing.slots[index].rights &= !right.bits();
+        assert_eq!(
+            missing.validate(),
+            Err("insufficient physical worker rights")
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn client_media_and_network_exclusivity_survive_handoff() {
     let mut original = offer();
     let mut second = original.clients[0].clone();
