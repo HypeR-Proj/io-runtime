@@ -8,11 +8,10 @@ use crate::clients::Client;
 use serde::{Deserialize, Serialize};
 
 pub const ENDPOINT: u32 = 0x8008_0010;
-pub const DESCRIPTION: u32 = 0x8008_0012;
 pub const READY: u32 = 0x8008_0020;
 pub const DESCRIBE_MESSAGE: &[u8] = b"HYPER-IO-DESCRIBE/2";
 pub const ADOPT_MESSAGE: &[u8] = b"HYPER-IO-ADOPT/2";
-pub const READY_MESSAGE: &[u8] = b"HYPER-IO-READY/2";
+pub const READY_MESSAGE: &[u8] = b"HYPER-SERVICE-ADOPTED/1";
 pub const MAX_DESCRIPTION: usize = 32 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

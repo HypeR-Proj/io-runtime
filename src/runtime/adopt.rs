@@ -35,9 +35,31 @@ pub(super) struct Adopted {
 }
 
 pub(super) fn receive(startup: &mut Startup<'_>) -> Result<Adopted> {
-    let snapshot = startup
-        .take(StartupPurpose::<VmoObject>::new(handoff::DESCRIPTION))
-        .map_err(|error| stage("take description", error))?;
+    let channel = CapabilityChannel::from_handle(
+        startup
+            .take(StartupPurpose::new(handoff::ENDPOINT))
+            .map_err(|error| stage("take endpoint", error))?,
+    );
+    // The generic startup coordinator delegates only the migration endpoint.
+    // This implementation, not bootstrap policy, owns the I/O VM wire format.
+    let mut record = [MaybeUninit::uninit(); 64];
+    let mut description_slot = [CapabilityReceiveSlot::new::<VmoObject>(
+        Rights::READ.union(Rights::TRANSFER).union(Rights::INSPECT),
+    )];
+    let message = channel
+        .receive(
+            hyper_os::DEADLINE_INFINITE,
+            &mut record,
+            &mut description_slot,
+        )
+        .map_err(|error| stage("receive description", error))?;
+    if message.bytes() != handoff::DESCRIBE_MESSAGE || message.capability_count() != 1 {
+        return Err("invalid I/O description message".into());
+    }
+    let snapshot = description_slot[0]
+        .take::<VmoObject>()
+        .map_err(|error| stage("take description", error))?
+        .ok_or("missing I/O description")?;
     let snapshot = SnapshotVmo::from_vmo(snapshot.as_handle_ref())
         .map_err(|error| stage("snapshot description", error))?;
     let mut length = [0; 8];
@@ -66,11 +88,6 @@ pub(super) fn receive(startup: &mut Startup<'_>) -> Result<Adopted> {
         .iter()
         .map(receive_slot)
         .collect::<Result<Vec<_>>>()?;
-    let channel = CapabilityChannel::from_handle(
-        startup
-            .take(StartupPurpose::new(handoff::ENDPOINT))
-            .map_err(|error| stage("take endpoint", error))?,
-    );
     // Populate the executable and dependency closure while the previous I/O
     // owner is still serving filesystem reads. This call must precede receive:
     // the rendezvous transfers authority and ends pre-commit rollback.
@@ -78,7 +95,6 @@ pub(super) fn receive(startup: &mut Startup<'_>) -> Result<Adopted> {
         startup.borrow(hyper_os::startup::ROOT_VMAR).map_err(show)?,
     )
     .map_err(|error| stage("lock I/O runtime mappings", error))?;
-    let mut record = [MaybeUninit::uninit(); 64];
     let message = channel
         .receive(hyper_os::DEADLINE_INFINITE, &mut record, &mut slots)
         .map_err(|error| stage("receive owners", error))?;
