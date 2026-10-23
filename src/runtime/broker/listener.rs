@@ -5,18 +5,12 @@
 
 use hyper_os::capability_channel::{CapabilityChannel, CapabilityReceiveSlot};
 use hyper_os::handle::{
-    ByteChannelObject, CapabilityChannelObject, GuestMemoryObject, OwnedHandle, Rights,
+    ByteChannelObject, CapabilityChannelObject, GuestMemoryObject, OwnedHandle,
     VirtualMachineObject,
 };
 use hyper_service::io;
 use std::mem::MaybeUninit;
 use std::sync::mpsc::{self, Receiver};
-
-pub(super) const MACHINE_RIGHTS: Rights = Rights::TRANSFER
-    .union(Rights::WRITE)
-    .union(Rights::WAIT)
-    .union(Rights::INSPECT)
-    .union(Rights::REQUEST_STOP);
 
 pub(super) enum Request {
     Connect(Admission),
@@ -98,7 +92,7 @@ fn receive(endpoint: &CapabilityChannel) -> hyper_os::Result<Option<Request>> {
         let deadline = hyper_os::time::deadline_after(std::time::Duration::from_secs(60))?.as_raw();
         let mut bytes = [MaybeUninit::uninit(); io::MEMORY_BYTES];
         let mut slots = [
-            CapabilityReceiveSlot::new::<VirtualMachineObject>(MACHINE_RIGHTS),
+            CapabilityReceiveSlot::new::<VirtualMachineObject>(io::MACHINE_RIGHTS),
             CapabilityReceiveSlot::new::<GuestMemoryObject>(io::MEMORY_RIGHTS),
         ];
         let message = session.receive(deadline, &mut bytes, &mut slots)?;

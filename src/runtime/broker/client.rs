@@ -4,7 +4,7 @@
 //! One guest binding: bounded mailbox progress and ordered retirement.
 
 use super::super::{Result, check_deadline, deadline, show};
-use super::{BindingPhase, ClientBinding, ClientSlot, listener};
+use super::{BindingPhase, ClientBinding, ClientSlot};
 use hyper_io_runtime_system::broker_exchange::Pending;
 use hyper_io_runtime_system::broker_exchange::Step;
 use hyper_io_runtime_system::protocol::BackendOperation;
@@ -299,7 +299,7 @@ impl ClientBinding {
             &mut [
                 CapabilityDisposition::move_handle(
                     &mut self.machine,
-                    RightsOffer::Exact(listener::MACHINE_RIGHTS),
+                    RightsOffer::Exact(io::MACHINE_RIGHTS),
                 )
                 .map_err(show)?,
                 CapabilityDisposition::move_handle(
