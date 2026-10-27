@@ -319,16 +319,17 @@ impl Broker {
         metrics: io::metrics::GuestMetrics,
     ) -> hyper_os::Result<[u8; io::OBSERVATION_BYTES]> {
         let info = vm::machine_info(guest.machine.as_handle_ref())?;
-        let boot_host_cpu = guest
+        let boot = guest
             .cpus
             .first()
-            .and_then(|cpu| vm::vcpu_info(cpu.as_handle_ref()).ok()?.host_cpu);
+            .and_then(|cpu| vm::vcpu_info(cpu.as_handle_ref()).ok());
         io::encode_observation(
             guest.name(),
             guest.image(),
             info,
             hyper_io_runtime_system::guest::install::RAM_BYTES,
-            boot_host_cpu,
+            boot.and_then(|info| info.host_cpu),
+            boot.map(|info| info.scheduler_thread_id),
             metrics,
         )
         .ok_or(hyper_os::Error::InvalidResponse)
