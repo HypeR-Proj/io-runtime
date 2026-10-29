@@ -61,5 +61,42 @@
       "app-test",
       "APP_TEST_PACKAGE=hyper-io-runtime-system"
     ]
-  ]
+  ],
+  "cargo_context": {
+    "Cargo.toml": {
+      "workspace": null,
+      "membership": "../../app",
+      "dependency_paths": {
+        "/dependencies/hyper-service": "lib/service",
+        "/dependencies/hyper-vm-image": "lib/vm-image",
+        "/dependencies/hyper-vm-support": "lib/vm-support"
+      },
+      "inherited_dependencies": {
+        "/dependencies/serde": {
+          "workspace": true
+        },
+        "/dependencies/serde_json": {
+          "workspace": true
+        },
+        "/dependencies/hyper-os": {
+          "workspace": true,
+          "features": [
+            "std"
+          ]
+        },
+        "/dependencies/hyper-rt": {
+          "workspace": true
+        },
+        "/dependencies/hyper-service": {
+          "workspace": true
+        },
+        "/dependencies/hyper-vm-image": {
+          "workspace": true
+        },
+        "/dependencies/hyper-vm-support": {
+          "workspace": true
+        }
+      }
+    }
+  }
 }
