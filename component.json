@@ -1,56 +1,12 @@
 {
+  "SPDX-FileCopyrightText": "2026 roolrz",
+  "SPDX-License-Identifier": "Apache-2.0",
   "version": 1,
   "name": "io-runtime",
   "kind": "service",
   "origin": {
     "repository": "https://github.com/roolrz/HypeR",
     "commit": "8d42d047058a2b58a291803700e86487fb723f7a"
-  },
-  "sources": {
-    "Cargo.toml": "svc/io-runtime/Cargo.toml",
-    "component.mk": "svc/io-runtime/component.mk",
-    "src/admission_policy.rs": "svc/io-runtime/src/admission_policy.rs",
-    "src/agent/framing.rs": "svc/io-runtime/src/agent/framing.rs",
-    "src/agent/mod.rs": "svc/io-runtime/src/agent/mod.rs",
-    "src/agent/stats.rs": "svc/io-runtime/src/agent/stats.rs",
-    "src/broker_exchange.rs": "svc/io-runtime/src/broker_exchange.rs",
-    "src/clients.rs": "svc/io-runtime/src/clients.rs",
-    "src/deadline.rs": "svc/io-runtime/src/deadline.rs",
-    "src/devices/memory.rs": "svc/io-runtime/src/devices/memory.rs",
-    "src/devices/mod.rs": "svc/io-runtime/src/devices/mod.rs",
-    "src/devices/port.rs": "svc/io-runtime/src/devices/port.rs",
-    "src/devices/worker.rs": "svc/io-runtime/src/devices/worker.rs",
-    "src/guest/install.rs": "svc/io-runtime/src/guest/install.rs",
-    "src/guest/mod.rs": "svc/io-runtime/src/guest/mod.rs",
-    "src/guest_log.rs": "svc/io-runtime/src/guest_log.rs",
-    "src/handoff.rs": "svc/io-runtime/src/handoff.rs",
-    "src/lib.rs": "svc/io-runtime/src/lib.rs",
-    "src/main.rs": "svc/io-runtime/src/main.rs",
-    "src/protocol/block.rs": "svc/io-runtime/src/protocol/block.rs",
-    "src/protocol/control.rs": "svc/io-runtime/src/protocol/control.rs",
-    "src/protocol/mod.rs": "svc/io-runtime/src/protocol/mod.rs",
-    "src/runtime/adopt.rs": "svc/io-runtime/src/runtime/adopt.rs",
-    "src/runtime/agent.rs": "svc/io-runtime/src/runtime/agent.rs",
-    "src/runtime/broker/client.rs": "svc/io-runtime/src/runtime/broker/client.rs",
-    "src/runtime/broker/listener.rs": "svc/io-runtime/src/runtime/broker/listener.rs",
-    "src/runtime/broker/mod.rs": "svc/io-runtime/src/runtime/broker/mod.rs",
-    "src/runtime/faults.rs": "svc/io-runtime/src/runtime/faults.rs",
-    "src/runtime/mod.rs": "svc/io-runtime/src/runtime/mod.rs",
-    "src/sdhci/mod.rs": "svc/io-runtime/src/sdhci/mod.rs",
-    "src/sdhci/registers.rs": "svc/io-runtime/src/sdhci/registers.rs",
-    "tests/agent.rs": "svc/io-runtime/tests/agent.rs",
-    "tests/block_protocol.rs": "svc/io-runtime/tests/block_protocol.rs",
-    "tests/broker_exchange.rs": "svc/io-runtime/tests/broker_exchange.rs",
-    "tests/clients.rs": "svc/io-runtime/tests/clients.rs",
-    "tests/console_port.rs": "svc/io-runtime/tests/console_port.rs",
-    "tests/guest_log.rs": "svc/io-runtime/tests/guest_log.rs",
-    "tests/handoff.rs": "svc/io-runtime/tests/handoff.rs",
-    "tests/io_protocol.rs": "svc/io-runtime/tests/io_protocol.rs"
-  },
-  "SPDX-FileCopyrightText": "2026 roolrz",
-  "SPDX-License-Identifier": "Apache-2.0",
-  "mounts": {
-    "": "svc/io-runtime"
   },
   "packages": [
     "hyper-io-runtime-system"
@@ -61,42 +17,5 @@
       "app-test",
       "APP_TEST_PACKAGE=hyper-io-runtime-system"
     ]
-  ],
-  "cargo_context": {
-    "Cargo.toml": {
-      "workspace": null,
-      "membership": "../../app",
-      "dependency_paths": {
-        "/dependencies/hyper-service": "lib/service",
-        "/dependencies/hyper-vm-image": "lib/vm-image",
-        "/dependencies/hyper-vm-support": "lib/vm-support"
-      },
-      "inherited_dependencies": {
-        "/dependencies/serde": {
-          "workspace": true
-        },
-        "/dependencies/serde_json": {
-          "workspace": true
-        },
-        "/dependencies/hyper-os": {
-          "workspace": true,
-          "features": [
-            "std"
-          ]
-        },
-        "/dependencies/hyper-rt": {
-          "workspace": true
-        },
-        "/dependencies/hyper-service": {
-          "workspace": true
-        },
-        "/dependencies/hyper-vm-image": {
-          "workspace": true
-        },
-        "/dependencies/hyper-vm-support": {
-          "workspace": true
-        }
-      }
-    }
-  }
+  ]
 }
