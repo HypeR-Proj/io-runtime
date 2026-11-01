@@ -19,3 +19,6 @@ pub mod sdhci;
 #[cfg(test)]
 #[path = "devices/port.rs"]
 mod console_port;
+
+#[cfg(target_os = "hyper")]
+extern crate hyper_vm_support_shared as hyper_vm_support;
