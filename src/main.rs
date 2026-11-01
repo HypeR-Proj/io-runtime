@@ -15,3 +15,6 @@ fn main() -> std::process::ExitCode {
         std::process::ExitCode::FAILURE
     }
 }
+
+#[cfg(target_os = "hyper")]
+extern crate hyper_vm_support_shared as hyper_vm_support;
