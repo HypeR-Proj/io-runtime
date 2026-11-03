@@ -71,9 +71,13 @@ fn receive(endpoint: &CapabilityChannel) -> hyper_os::Result<Option<Request>> {
     let mut slots = [CapabilityReceiveSlot::new::<CapabilityChannelObject>(
         io::SESSION_RIGHTS,
     )];
-    let message = endpoint.receive(hyper_os::DEADLINE_INFINITE, &mut bytes, &mut slots)?;
+    let message = match endpoint.receive(hyper_os::DEADLINE_INFINITE, &mut bytes, &mut slots) {
+        Ok(message) => message,
+        Err(hyper_os::Error::ReceiveRejected(_)) => return Ok(None),
+        Err(error) => return Err(error),
+    };
     if message.capability_count() != 1 {
-        return Err(hyper_os::Error::InvalidResponse);
+        return Ok(None);
     }
     let session = CapabilityChannel::from_handle(
         slots[0]
@@ -83,12 +87,14 @@ fn receive(endpoint: &CapabilityChannel) -> hyper_os::Result<Option<Request>> {
     if message.bytes() == io::OBSERVE_MESSAGE {
         return Ok(Some(Request::Observe(session)));
     }
-    let connection = io::decode_connect(message.bytes()).ok_or(hyper_os::Error::InvalidResponse)?;
+    let Some(connection) = io::decode_connect(message.bytes()) else {
+        return Ok(None);
+    };
     let client = connection.client;
     let volume = connection.volume.map(str::to_owned);
     let network = connection.network.map(str::to_owned);
     let mac = connection.mac;
-    let admission = (|| -> hyper_os::Result<Admission> {
+    let admission = (|| -> hyper_os::Result<Option<Admission>> {
         let deadline = hyper_os::time::deadline_after(std::time::Duration::from_secs(60))?.as_raw();
         let mut bytes = [MaybeUninit::uninit(); io::MEMORY_BYTES];
         let mut slots = [
@@ -96,12 +102,13 @@ fn receive(endpoint: &CapabilityChannel) -> hyper_os::Result<Option<Request>> {
             CapabilityReceiveSlot::new::<GuestMemoryObject>(io::MEMORY_RIGHTS),
         ];
         let message = session.receive(deadline, &mut bytes, &mut slots)?;
-        let (base, length) =
-            io::decode_memory(message.bytes()).ok_or(hyper_os::Error::InvalidResponse)?;
+        let Some((base, length)) = io::decode_memory(message.bytes()) else {
+            return Ok(None);
+        };
         if message.capability_count() != 2 {
-            return Err(hyper_os::Error::InvalidResponse);
+            return Ok(None);
         }
-        Ok(Admission {
+        Ok(Some(Admission {
             pci: &message.bytes()[..8] == io::PCI_MEMORY_MESSAGE,
             client,
             volume,
@@ -116,9 +123,18 @@ fn receive(endpoint: &CapabilityChannel) -> hyper_os::Result<Option<Request>> {
             memory: slots[1]
                 .take::<GuestMemoryObject>()?
                 .ok_or(hyper_os::Error::MissingHandle)?,
-        })
+        }))
     })();
     // A cancelled per-runtime setup owns no DMA mapping and cannot take down
     // the shared configuration volume or other already-bound clients.
-    Ok(admission.ok().map(Request::Connect))
+    match admission {
+        Ok(admission) => Ok(admission.map(Request::Connect)),
+        Err(hyper_os::Error::ReceiveRejected(_))
+        | Err(hyper_os::Error::Status(
+            hyper_os::Status::PEER_CLOSED
+            | hyper_os::Status::TIMED_OUT
+            | hyper_os::Status::CANCELLED,
+        )) => Ok(None),
+        Err(error) => Err(error),
+    }
 }

@@ -31,7 +31,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn closed_or_malformed_source_disables_only_future_admissions() {
+    fn closed_or_locally_broken_source_disables_only_future_admissions() {
         for error in [
             hyper_os::Error::Status(hyper_os::Status::PEER_CLOSED),
             hyper_os::Error::InvalidResponse,
@@ -58,6 +58,13 @@ mod tests {
             poll::<_, ()>(&mut listener, |_| Err(hyper_os::Error::Status(
                 hyper_os::Status::WOULD_BLOCK
             ))),
+            Poll::Idle
+        ));
+        assert!(listener.is_some());
+        // Malformed requests and rolled-back matched transfers are discarded
+        // by the worker as None. They do not disable the public source.
+        assert!(matches!(
+            poll::<_, ()>(&mut listener, |_| Ok(None)),
             Poll::Idle
         ));
         assert!(listener.is_some());
