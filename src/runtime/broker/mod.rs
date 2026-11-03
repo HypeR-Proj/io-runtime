@@ -4,7 +4,7 @@
 //! Board-scoped ownership of mailbox control and dynamic guest mappings.
 
 mod client;
-mod listener;
+use hyper_io_runtime_system::admission as listener;
 
 use client::session_closed;
 
