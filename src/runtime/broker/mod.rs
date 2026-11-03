@@ -336,6 +336,11 @@ impl Broker {
     }
 
     fn admit(&mut self, guest: &mut InstalledGuest, admission: listener::Admission) -> Result<()> {
+        // Completed handshakes can wait behind retirement. Check again before
+        // publishing MMIO routes or DMA state; closure is not hardware quiescence.
+        if !admission.is_pending().map_err(show)? {
+            return Ok(());
+        }
         let descriptions = self.descriptions();
         let Some(index) = self.slots.iter().position(|slot| {
             slot.policy.id == admission.client

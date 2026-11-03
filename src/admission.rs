@@ -24,6 +24,7 @@ pub enum Request {
 }
 
 pub struct Admission {
+    pub deadline: u64,
     pub pci: bool,
     pub client: u32,
     pub volume: Option<String>,
@@ -34,6 +35,27 @@ pub struct Admission {
     pub memory: OwnedHandle<GuestMemoryObject>,
     pub base: u64,
     pub length: u64,
+}
+
+impl Admission {
+    pub fn is_pending(&self) -> hyper_os::Result<bool> {
+        if hyper_os::time::monotonic_now()?.as_nanoseconds() >= self.deadline {
+            return Ok(false);
+        }
+        match hyper_os::wait::wait_many(
+            &[hyper_os::wait::WaitItem::new(
+                self.session.as_handle_ref(),
+                hyper_os::wait::ObjectSignals::<CapabilityChannelObject>::PEER_CLOSED,
+            )],
+            0,
+        ) {
+            Ok(_) => Ok(false),
+            Err(Error::Status(Status::TIMED_OUT)) => {
+                Ok(hyper_os::time::monotonic_now()?.as_nanoseconds() < self.deadline)
+            }
+            Err(error) => Err(error),
+        }
+    }
 }
 
 const MAX_HANDSHAKES: usize = 8;
@@ -259,6 +281,7 @@ fn receive_memory(
             return Ok(None);
         }
         return Ok(Some(Request::Connect(Admission {
+            deadline: limit,
             pci: &message.bytes()[..8] == io::PCI_MEMORY_MESSAGE,
             client,
             volume,

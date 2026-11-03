@@ -33,6 +33,12 @@ results use an eight-entry queue; the main broker remains the sole mapping owner
 Closing a private session reclaims its slot, and listener shutdown cancels and
 joins all workers. These are aggregate bounds, not per-client fairness.
 
+A completed admission retains its original handshake deadline while queued. The
+broker checks that deadline and session closure before accepting a new binding,
+including after waiting for an older binding to retire. Once accepted, backend
+transactions, DMA owners and notification routes follow normal ordered
+retirement; peer closure alone never proves hardware quiescence.
+
 Closing the public admission endpoint stops new connections without canceling
 already-transferred private handshakes. Those sessions retain their finite
 budgets; the broker drains their results before observing the public terminal
