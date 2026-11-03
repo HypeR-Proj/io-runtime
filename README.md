@@ -32,3 +32,9 @@ mapping publication. Observer requests do not consume handshake slots. Completed
 results use an eight-entry queue; the main broker remains the sole mapping owner.
 Closing a private session reclaims its slot, and listener shutdown cancels and
 joins all workers. These are aggregate bounds, not per-client fairness.
+
+Closing the public admission endpoint stops new connections without canceling
+already-transferred private handshakes. Those sessions retain their finite
+budgets; the broker drains their results before observing the public terminal
+error. Explicit listener destruction cancels remaining handshakes and joins
+the workers. Active backend bindings keep their separate retirement owners.

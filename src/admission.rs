@@ -70,6 +70,7 @@ impl Listener {
             .name("io-admit".into())
             .spawn(move || {
                 let mut workers: Vec<JoinHandle<()>> = Vec::new();
+                let mut terminal_error = None;
                 while !canceled.load(Ordering::Acquire) {
                     if let Err(error) = reap(&mut workers) {
                         publish(&sender, &writer, Err(error));
@@ -79,7 +80,9 @@ impl Listener {
                         Ok(Some(incoming)) => incoming,
                         Ok(None) | Err(Error::Status(Status::TIMED_OUT)) => continue,
                         Err(error) => {
-                            publish(&sender, &writer, Err(error));
+                            // The public endpoint no longer accepts new peers,
+                            // but private handshakes already own their sessions.
+                            terminal_error = Some(error);
                             break;
                         }
                     };
@@ -116,11 +119,21 @@ impl Listener {
                         }
                     }
                 }
-                canceled.store(true, Ordering::Release);
+                if terminal_error.is_none() {
+                    canceled.store(true, Ordering::Release);
+                }
                 for worker in workers {
                     if worker.join().is_err() {
-                        eprintln!("io admission worker terminated unexpectedly");
+                        terminal_error = Some(Error::InvalidResponse);
                     }
+                }
+                // Queue the terminal notification after every admitted private
+                // result. The broker must drain those results before dropping
+                // this listener; Drop still cancels finite handshake slices.
+                if !canceled.load(Ordering::Acquire)
+                    && let Some(error) = terminal_error
+                {
+                    publish(&sender, &writer, Err(error));
                 }
             })
             .map_err(|_| Error::Status(Status::NO_MEMORY))?;
