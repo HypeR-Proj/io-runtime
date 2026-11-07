@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread::{self, JoinHandle};
 
-use super::Devices;
+use super::{Devices, host_wait};
 use crate::handoff::WorkerMode;
 use crate::sdhci::registers::{line_asserted, request_offset};
 
@@ -93,7 +93,7 @@ struct Pump {
     machine_id: RegistrationId,
     irq_id: Option<RegistrationId>,
     cpu_ids: Vec<RegistrationId>,
-    host_id: Option<RegistrationId>,
+    host_wait: host_wait::Subscription<RegistrationId>,
     irq_armed: bool,
     mode: WorkerMode,
     connections: Receiver<super::port::Port>,
@@ -174,7 +174,7 @@ pub fn resume(
         machine_id,
         irq_id,
         cpu_ids,
-        host_id: None,
+        host_wait: host_wait::Subscription::new(),
         irq_armed: true,
         mode,
         connections: requests,
@@ -272,12 +272,14 @@ impl Pump {
             // Budgeted queue work must not sleep waiting for another guest
             // kick after already consuming its notification.
             let more = self.devices.poll()?;
-            if let Some(previous) = self.host_id.take() {
-                self.waits.remove(previous)?;
-            }
-            if let Some(port) = self.devices.host_port() {
-                self.host_id = Some(self.waits.add(port.as_handle_ref(), port.signals())?);
-            }
+            let port = self.devices.host_port();
+            self.host_wait.update(
+                port.map(super::port::Port::wait_key),
+                &mut HostWaits {
+                    waits: &self.waits,
+                    port,
+                },
+            )?;
             let limit = if more {
                 hyper_os::time::monotonic_now()?.as_nanoseconds()
             } else {
@@ -301,6 +303,15 @@ impl Pump {
                     Err(error) => return Err(error),
                 }
                 if let Ok(port) = self.connections.try_recv() {
+                    // Cancel the old source and any queued event before replacing
+                    // the port. Its readiness must never target the new session.
+                    self.host_wait.update(
+                        None,
+                        &mut HostWaits {
+                            waits: &self.waits,
+                            port: None,
+                        },
+                    )?;
                     self.devices.host_event(true);
                     if let Err(error) = self.devices.attach_port(port) {
                         // Telemetry attachment must not stop physical I/O.
@@ -310,7 +321,7 @@ impl Pump {
                 self.waits.rearm(self.stop_id)?;
                 continue;
             }
-            if Some(event.registration) == self.host_id {
+            if self.host_wait.consume(event.registration) {
                 self.devices.host_event(
                     ObjectSignals::<ByteChannelObject>::PEER_CLOSED.is_present_in(event.signals),
                 );
@@ -324,5 +335,33 @@ impl Pump {
                 return Err(Error::InvalidResponse);
             }
         }
+    }
+}
+
+/// The cached key cannot manufacture authority: additions borrow and verify the
+/// current Port. Removal/rearming act only on this worker's owned wait set.
+struct HostWaits<'a> {
+    waits: &'a WaitSet,
+    port: Option<&'a super::port::Port>,
+}
+
+impl host_wait::Waits for HostWaits<'_> {
+    type Id = RegistrationId;
+    type Error = Error;
+
+    fn add(&mut self, key: host_wait::Key) -> Result<RegistrationId> {
+        let port = self.port.ok_or(Error::InvalidResponse)?;
+        if port.wait_key() != key {
+            return Err(Error::InvalidResponse);
+        }
+        self.waits.add(port.as_handle_ref(), port.signals())
+    }
+
+    fn remove(&mut self, id: RegistrationId) -> Result<()> {
+        self.waits.remove(id)
+    }
+
+    fn rearm(&mut self, id: RegistrationId) -> Result<()> {
+        self.waits.rearm(id)
     }
 }

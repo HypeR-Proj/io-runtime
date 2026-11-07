@@ -44,3 +44,12 @@ already-transferred private handshakes. Those sessions retain their finite
 budgets; the broker drains their results before observing the public terminal
 error. Explicit listener destruction cancels remaining handshakes and joins
 the workers. Active backend bindings keep their separate retirement owners.
+
+## Device reactor waits
+
+The device worker retains its host-console wait registration across unrelated
+MMIO and IRQ turns. It rearms only a consumed notification and replaces the
+registration when the port or its backpressure-dependent interests change.
+Peer closure remains subscribed even when reads and writes are both blocked.
+Console replacement cancels queued notifications for the old session before
+attaching the new one; no notification can target a replacement port.

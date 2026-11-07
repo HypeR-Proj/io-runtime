@@ -18,6 +18,10 @@ pub mod protocol;
 pub mod sdhci;
 
 #[cfg(test)]
+#[path = "devices/host_wait.rs"]
+mod host_wait;
+
+#[cfg(test)]
 #[path = "devices/port.rs"]
 mod console_port;
 
