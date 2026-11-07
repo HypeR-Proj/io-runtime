@@ -9,7 +9,7 @@
 //! `PEER_CLOSED` and cannot send bytes into a replacement guest session.
 
 use hyper_os::channel::{self, ByteChannel};
-use hyper_os::handle::{ByteChannelObject, HandleRef, OwnedHandle};
+use hyper_os::handle::{ByteChannelObject, HandleRef, Koid, OwnedHandle};
 use hyper_os::wait::ObjectSignals;
 use hyper_os::{Error, Result, Status};
 use hyper_vm_support::virtio_console::Console;
@@ -25,10 +25,12 @@ pub struct HostPort {
 impl HostPort {
     pub fn pair() -> Result<(Self, Port)> {
         let (host, device) = channel::create_pair()?;
+        let identity = device.basic_info()?.koid;
         Ok((
             Self { channel: host },
             Port {
                 channel: device,
+                identity,
                 buffers: Buffers::new(),
             },
         ))
@@ -62,6 +64,8 @@ impl HostPort {
 /// must revoke `Console::set_open` when this endpoint closes or becomes invalid.
 pub struct Port {
     channel: OwnedHandle<ByteChannelObject>,
+    // Capture stable observation identity once; hot-loop comparisons need no syscall.
+    identity: Koid,
     buffers: Buffers,
 }
 
@@ -82,14 +86,23 @@ impl Port {
     /// must discard the session immediately, including when guest backpressure
     /// has disabled READABLE interest. Never subscribe to idle WRITABLE signals.
     pub fn signals(&self) -> ObjectSignals<ByteChannelObject> {
+        let key = self.wait_key();
         let mut signals = ObjectSignals::<ByteChannelObject>::PEER_CLOSED;
-        if self.buffers.input_start == self.buffers.input_end {
+        if key.readable {
             signals = signals.union(ObjectSignals::<ByteChannelObject>::READABLE);
         }
-        if self.buffers.output_end != 0 {
+        if key.writable {
             signals = signals.union(ObjectSignals::<ByteChannelObject>::WRITABLE);
         }
         signals
+    }
+
+    pub(super) fn wait_key(&self) -> super::host_wait::Key {
+        super::host_wait::Key {
+            source: self.identity.get(),
+            readable: self.buffers.input_start == self.buffers.input_end,
+            writable: self.buffers.output_end != 0,
+        }
     }
 
     /// Never blocks: at most one channel message and one guest chunk move in

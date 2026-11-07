@@ -3,6 +3,7 @@
 
 //! Formal userspace devices attached after taking ownership of the running VM.
 
+mod host_wait;
 mod memory;
 pub mod port;
 pub mod worker;
