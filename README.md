@@ -53,3 +53,35 @@ registration when the port or its backpressure-dependent interests change.
 Peer closure remains subscribed even when reads and writes are both blocked.
 Console replacement cancels queued notifications for the old session before
 attaching the new one; no notification can target a replacement port.
+
+## Initialized random service
+
+A deployment may declare that this storage successor accepts the optional
+`random` service endpoint. System startup creates its capability pair before
+starting interactive services, then moves the provider endpoint during adoption.
+Clients receive only `WRITE|WAIT` plus explicit delegation rights; the provider
+receives `READ|WAIT`. The kernel does not generate random bytes.
+
+The trusted Linux I/O appliance supplies 1–192 initialized bytes per owner
+transaction using nonblocking `getrandom`. Missing protocol support returns
+`NOT_SUPPORTED`; an uninitialized source returns `WOULD_BLOCK`. Native code does
+not seed a second generator or substitute timestamps, addresses or counters.
+Binding, epoch, advertised features and the last owner transaction survive the
+bootstrap handoff. Random results are never replayed or logged.
+
+Admission uses one persistent receiver and a queue of eight requests, with one
+owner transaction in flight. Client deadlines remain absolute. A canceled sent
+request is drained before another transaction starts. Five-second health limits
+bound owner-mailbox send admission and, separately, reply completion; expiration
+reports `IO_ERROR` and permanently disables that control session. Thus one
+active request can occupy at most approximately ten seconds across both phases,
+or less when its caller deadline expires. A late reply is
+discarded without reopening it. Established block queues continue running.
+Replies to clients never block the main I/O event loop. The listener uses 250 ms
+cancellable receive slices; shutdown closes its bounded queue before joining.
+
+On Pi5 the bootstrap owner explicitly assigns the firmware-discovered RNG200
+register bank to the I/O VM through the existing MMIO consumer. Linux owns its
+hardware driver, entropy conditioning, readiness and reseeding. QEMU acceptance
+uses an RNDR-capable CPU. An unsupported platform or appliance fails explicitly;
+passing byte-format tests is not a cryptographic assessment of an entropy source.
