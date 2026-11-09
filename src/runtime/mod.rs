@@ -46,6 +46,9 @@ pub(super) fn main() -> ExitCode {
         let readiness = startup
             .take(StartupPurpose::<ByteChannelObject>::new(handoff::READY))
             .map_err(show)?;
+        let random_endpoint = startup
+            .take_optional(hyper_service::random::SERVER)
+            .map_err(show)?;
         let mut owner = adopt::receive(&mut startup)?;
         // Ownership has already moved. A timed-out supervisor may have closed
         // its readiness endpoint; that must not stop the running I/O VM or
@@ -54,7 +57,7 @@ pub(super) fn main() -> ExitCode {
             eprintln!("HypeR io-runtime: adopted backend readiness unavailable: {error:?}");
         }
         println!("HypeR io-runtime: running backend adopted");
-        let outcome = serve(&mut owner);
+        let outcome = serve(&mut owner, random_endpoint);
         let stopped = vm::request_stop(owner.guest.machine.as_handle_ref())
             .map_err(show)
             .and_then(|()| {
@@ -78,7 +81,27 @@ pub(super) fn main() -> ExitCode {
         }
     }
 }
-fn serve(owner: &mut adopt::Adopted) -> Result<()> {
+fn serve(
+    owner: &mut adopt::Adopted,
+    random_endpoint: Option<
+        hyper_os::handle::OwnedHandle<hyper_os::handle::CapabilityChannelObject>,
+    >,
+) -> Result<()> {
+    // Once random control owns this sequence, an internal service failure must
+    // never hand an uncertain mailbox back to the legacy idle-control path.
+    let random_control = random_endpoint.is_some() && owner.owner_control.is_some();
+    let mut random = random_endpoint.and_then(|endpoint| {
+        match hyper_io_runtime_system::random::Service::new(
+            hyper_os::capability_channel::CapabilityChannel::from_handle(endpoint),
+            owner.owner_control,
+        ) {
+            Ok(service) => Some(service),
+            Err(error) => {
+                eprintln!("HypeR random: ERROR: listener startup failed: {error:?}");
+                None
+            }
+        }
+    });
     let mut faults = faults::Monitor::new();
     #[cfg(not(feature = "console-test"))]
     let mut agent = agent::Agent::new(hyper_io_runtime_system::guest::install::RAM_BYTES);
@@ -107,7 +130,26 @@ fn serve(owner: &mut adopt::Adopted) -> Result<()> {
         } else {
             false
         };
-        if agent_progress || broker_progress {
+        let mailbox = owner
+            .native_mailboxes
+            .first()
+            .ok_or("missing management mailbox")?;
+        let random_progress = if let Some(service) = &mut random {
+            let now_ns = hyper_os::time::monotonic_now()
+                .map_err(show)?
+                .as_nanoseconds();
+            match service.poll(mailbox, now_ns) {
+                Ok(progress) => progress,
+                Err(error) => {
+                    eprintln!("HypeR random: ERROR: service disabled: {error:?}; storage retained");
+                    random.take();
+                    false
+                }
+            }
+        } else {
+            false
+        };
+        if agent_progress || broker_progress || random_progress {
             continue;
         }
         let mut items = vec![
@@ -122,11 +164,20 @@ fn serve(owner: &mut adopt::Adopted) -> Result<()> {
             .native_mailboxes
             .first()
             .ok_or("missing management mailbox")?;
-        items.push(WaitItem::new(
-            mailbox.as_handle_ref(),
-            ObjectSignals::<GuestMailboxObject>::READABLE
-                .union(ObjectSignals::<GuestMailboxObject>::PEER_CLOSED),
-        ));
+        let legacy_control_index = if random_control {
+            None
+        } else {
+            let index = items.len();
+            items.push(WaitItem::new(
+                mailbox.as_handle_ref(),
+                ObjectSignals::<GuestMailboxObject>::READABLE
+                    .union(ObjectSignals::<GuestMailboxObject>::PEER_CLOSED),
+            ));
+            Some(index)
+        };
+        if let Some(service) = &random {
+            items.extend(service.wait_items(mailbox));
+        }
         if let Some(broker) = &owner.broker {
             items.extend(broker.wait_items());
         }
@@ -140,9 +191,12 @@ fn serve(owner: &mut adopt::Adopted) -> Result<()> {
             .map_or(hyper_os::DEADLINE_INFINITE, |broker| broker.next_deadline());
         #[cfg(not(feature = "console-test"))]
         let limit = limit.min(agent.deadline());
+        let limit = random
+            .as_ref()
+            .map_or(limit, |service| limit.min(service.next_deadline()));
         faults.append_waits(owner, &mut items);
         match wait::wait_many(&items, limit) {
-            Ok(event) if event.index == 2 => {
+            Ok(event) if Some(event.index) == legacy_control_index => {
                 return Err("unexpected idle backend control event".into());
             }
             Ok(event) => faults.wake(event.index),

@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 
 pub const ENDPOINT: u32 = 0x8008_0010;
 pub const READY: u32 = 0x8008_0020;
-pub const DESCRIBE_MESSAGE: &[u8] = b"HYPER-IO-DESCRIBE/2";
-pub const ADOPT_MESSAGE: &[u8] = b"HYPER-IO-ADOPT/2";
+pub const DESCRIBE_MESSAGE: &[u8] = b"HYPER-IO-DESCRIBE/3";
+pub const ADOPT_MESSAGE: &[u8] = b"HYPER-IO-ADOPT/3";
 pub const READY_MESSAGE: &[u8] = b"HYPER-SERVICE-ADOPTED/1";
 pub const MAX_DESCRIPTION: usize = 32 * 1024;
 
@@ -30,6 +30,7 @@ pub enum Kind {
     HotplugInterrupt,
     StorageDevice,
     NetworkDevice,
+    EntropyDevice,
     Broker,
     NativeMemory,
     NativeMailbox,
@@ -55,6 +56,11 @@ impl Kind {
             Self::HotplugInterrupt => owner.union(Rights::WRITE),
             Self::SerialBuffer => owner.union(Rights::READ).union(Rights::MAP),
             Self::StorageDevice | Self::NetworkDevice => owner.union(Rights::INSPECT),
+            Self::EntropyDevice => owner
+                .union(Rights::READ)
+                .union(Rights::WRITE)
+                .union(Rights::INSPECT)
+                .union(Rights::DUPLICATE),
             Self::Broker => owner.union(Rights::READ).union(Rights::WAIT),
             Self::NativeMemory => owner.union(Rights::MAP),
             Self::NativeMailbox | Self::BrokerMailbox => owner
@@ -70,6 +76,16 @@ pub struct Slot {
     pub kind: Kind,
     pub rights: u64,
 }
+/// Quiescent owner mailbox state. No request may be pending at handoff.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OwnerControl {
+    pub binding: u64,
+    pub epoch: u32,
+    pub last_transaction: u64,
+    pub features: u64,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Description {
@@ -82,13 +98,15 @@ pub struct Description {
     pub memory_size: u64,
     pub native: usize,
     pub network: bool,
+    pub entropy: bool,
+    pub owner_control: Option<OwnerControl>,
     pub broker: bool,
     pub clients: Vec<Client>,
     pub slots: Vec<Slot>,
 }
 impl Description {
     pub fn validate(&self) -> Result<(), &'static str> {
-        if self.version != 2
+        if self.version != 3
             || self.memory_base != 0x4000_0000
             || self.memory_size != crate::guest::RAM_BYTES
             || self.name.is_empty()
@@ -101,6 +119,14 @@ impl Description {
         {
             return Err("invalid I/O handoff description");
         }
+        if self.owner_control.is_some_and(|owner| {
+            owner.binding == 0
+                || owner.epoch == 0
+                || owner.last_transaction == 0
+                || owner.features & 7 != 7
+        }) {
+            return Err("invalid owner control state");
+        }
         let mut kinds = vec![Kind::Machine];
         kinds.extend(std::iter::repeat_n(Kind::Cpu, self.cpus));
         kinds.extend([
@@ -112,6 +138,9 @@ impl Description {
         ]);
         if self.network {
             kinds.push(Kind::NetworkDevice);
+        }
+        if self.entropy {
+            kinds.push(Kind::EntropyDevice);
         }
         if self.broker {
             kinds.push(Kind::Broker);

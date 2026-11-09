@@ -30,6 +30,9 @@ pub(super) struct Adopted {
     // recreated by adoption; native filesystem traffic keeps its original path.
     pub physical: OwnedHandle<PhysicalDeviceObject>,
     pub network: Option<OwnedHandle<PhysicalDeviceObject>>,
+    // IRQ-free RNG has no DMA fault subscription; retain assignment lifetime.
+    pub _entropy: Option<OwnedHandle<PhysicalDeviceObject>>,
+    pub owner_control: Option<handoff::OwnerControl>,
     pub _native_memory: Vec<OwnedHandle<GuestMemoryObject>>,
     pub native_mailboxes: Vec<Mailbox>,
 }
@@ -119,6 +122,11 @@ pub(super) fn receive(startup: &mut Startup<'_>) -> Result<Adopted> {
     } else {
         None
     };
+    let entropy = if description.entropy {
+        Some(take::<PhysicalDeviceObject>(&mut slots)?)
+    } else {
+        None
+    };
     let broker_endpoint = if description.broker {
         Some(take::<CapabilityChannelObject>(&mut slots)?)
     } else {
@@ -175,8 +183,14 @@ pub(super) fn receive(startup: &mut Startup<'_>) -> Result<Adopted> {
     )
     .map_err(|error| stage("prepare userspace devices", error))?;
     let worker = Some(
-        worker::resume(&physical, &guest, description.worker, devices)
-            .map_err(|error| stage("resume I/O device consumer", error))?,
+        worker::resume(
+            &physical,
+            entropy.as_ref(),
+            &guest,
+            description.worker,
+            devices,
+        )
+        .map_err(|error| stage("resume I/O device consumer", error))?,
     );
     let broker = broker_endpoint
         .map(|endpoint| Broker::adopt(endpoint, description.clients, broker_mailboxes))
@@ -188,6 +202,8 @@ pub(super) fn receive(startup: &mut Startup<'_>) -> Result<Adopted> {
         worker,
         physical,
         network,
+        _entropy: entropy,
+        owner_control: description.owner_control,
         _native_memory: native_memory,
         native_mailboxes,
     })
@@ -203,7 +219,7 @@ fn receive_slot(slot: &handoff::Slot) -> Result<CapabilityReceiveSlot> {
         Kind::Cpu => CapabilityReceiveSlot::new::<VirtualCpuObject>(rights),
         Kind::Serial => CapabilityReceiveSlot::new::<VirtualSerialObject>(rights),
         Kind::SerialBuffer => CapabilityReceiveSlot::new::<VmoObject>(rights),
-        Kind::StorageDevice | Kind::NetworkDevice => {
+        Kind::StorageDevice | Kind::NetworkDevice | Kind::EntropyDevice => {
             CapabilityReceiveSlot::new::<PhysicalDeviceObject>(rights)
         }
         Kind::Broker => CapabilityReceiveSlot::new::<CapabilityChannelObject>(rights),

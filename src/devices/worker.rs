@@ -84,6 +84,7 @@ impl Drop for MachineGuard {
 
 struct Pump {
     physical: Option<OwnedHandle<PhysicalDeviceObject>>,
+    entropy: Option<OwnedHandle<PhysicalDeviceObject>>,
     devices: Devices,
     _machine: MachineGuard,
     cpus: Vec<Arc<OwnedHandle<VirtualCpuObject>>>,
@@ -101,6 +102,7 @@ struct Pump {
 
 pub fn resume(
     physical: &OwnedHandle<PhysicalDeviceObject>,
+    entropy: Option<&OwnedHandle<PhysicalDeviceObject>>,
     guest: &InstalledGuest,
     mode: WorkerMode,
     devices: Devices,
@@ -163,7 +165,11 @@ pub fn resume(
             ObjectSignals::<VirtualCpuObject>::MMIO_REQUEST,
         )?);
     }
+    let entropy = entropy
+        .map(|device| device.duplicate(hyper_os::Rights::READ.union(hyper_os::Rights::WRITE)))
+        .transpose()?;
     let mut pump = Pump {
+        entropy,
         physical,
         devices,
         _machine: machine,
@@ -240,7 +246,15 @@ impl Pump {
 
     fn mmio(&mut self, index: usize) -> Result<()> {
         if let Some(request) = vm::pending_mmio(self.cpus[index].as_handle_ref())? {
-            let completion = if Devices::owns(&request) {
+            let completion = if request.device.get() == crate::rng200::COOKIE {
+                crate::rng200::forward(
+                    self.entropy
+                        .as_ref()
+                        .ok_or(Error::InvalidResponse)?
+                        .as_handle_ref(),
+                    request,
+                )?
+            } else if Devices::owns(&request) {
                 self.devices.mmio(request)?
             } else {
                 let physical = self.physical.as_ref().ok_or(Error::InvalidResponse)?;

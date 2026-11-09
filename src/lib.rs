@@ -15,6 +15,8 @@ pub mod guest;
 pub mod guest_log;
 pub mod handoff;
 pub mod protocol;
+pub mod random;
+pub mod rng200;
 pub mod sdhci;
 
 #[cfg(test)]

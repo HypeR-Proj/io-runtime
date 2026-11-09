@@ -53,7 +53,10 @@ fn owner_reply_requires_identity_and_canonical_payload() {
     bytes[56..60].copy_from_slice(&1048576u32.to_le_bytes());
     assert_eq!(
         request.decode_reply(&bytes),
-        Ok(Reply::Hello { max_read: 1048576 })
+        Ok(Reply::Hello {
+            max_read: 1048576,
+            features: 7
+        })
     );
     for index in [0, 4, 6, 8, 12, 16, 24, 32, 36, 44, 60] {
         let mut changed = bytes.clone();
@@ -141,4 +144,22 @@ fn owner_cannot_encode_wrapping_ranges() {
             .is_err()
         );
     }
+}
+
+#[test]
+fn hello_preserves_optional_features_for_the_successor() {
+    let request = Request {
+        transaction: 1,
+        command: Command::Hello,
+    };
+    let mut bytes = reply(request, 64);
+    bytes[48..56].copy_from_slice(&15u64.to_le_bytes());
+    bytes[56..60].copy_from_slice(&1048576u32.to_le_bytes());
+    assert_eq!(
+        request.decode_reply(&bytes),
+        Ok(Reply::Hello {
+            max_read: 1048576,
+            features: 15
+        })
+    );
 }

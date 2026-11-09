@@ -18,7 +18,7 @@ fn offer() -> Description {
         Kind::BrokerMailbox,
     ];
     Description {
-        version: 2,
+        version: 3,
         memory_base: 0x4000_0000,
         memory_size: 64 * 1024 * 1024,
         name: "io".into(),
@@ -27,6 +27,8 @@ fn offer() -> Description {
         cpus: 1,
         native: 1,
         network: false,
+        entropy: false,
+        owner_control: None,
         broker: true,
         clients: vec![Client {
             id: 1,
@@ -196,4 +198,39 @@ fn committed_empty_slot_retains_guest_controls_and_rejects_an_inserted_device() 
     assert_eq!(decode_commit(&record), Ok((99, false, port.clone())));
     port.set_present(true);
     assert!(decode_commit(&encode_commit(99, false, &port)).is_err());
+}
+
+#[test]
+fn owner_control_and_entropy_authority_survive_serialization_without_restarting_transactions() {
+    let mut description = offer();
+    description.owner_control = Some(OwnerControl {
+        binding: 1,
+        epoch: 1,
+        last_transaction: 421,
+        features: 15,
+    });
+    description.entropy = true;
+    description.slots.insert(
+        7,
+        Slot {
+            kind: Kind::EntropyDevice,
+            rights: Kind::EntropyDevice.required_rights().bits(),
+        },
+    );
+    assert_eq!(description.validate(), Ok(()));
+    let decoded: Description =
+        serde_json::from_slice(&serde_json::to_vec(&description).unwrap()).unwrap();
+    assert_eq!(decoded.owner_control, description.owner_control);
+    assert_eq!(decoded.validate(), Ok(()));
+    for right in [
+        hyper_os::Rights::READ,
+        hyper_os::Rights::WRITE,
+        hyper_os::Rights::DUPLICATE,
+    ] {
+        let mut rejected = description.clone();
+        rejected.slots[7].rights &= !right.bits();
+        assert!(rejected.validate().is_err());
+    }
+    description.owner_control.as_mut().unwrap().last_transaction = 0;
+    assert!(description.validate().is_err());
 }

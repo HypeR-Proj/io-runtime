@@ -56,7 +56,7 @@ pub struct Disk {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Reply {
-    Hello { max_read: u32 },
+    Hello { max_read: u32, features: u64 },
     Disk(Option<Disk>),
     Done,
 }
@@ -165,7 +165,10 @@ impl Request {
                 {
                     return Err(Error::Invalid);
                 }
-                Ok(Reply::Hello { max_read })
+                Ok(Reply::Hello {
+                    max_read,
+                    features: u64_at(bytes, 48)?,
+                })
             }
             Command::Enumerate { cursor } => {
                 let id = u64_at(bytes, 48)?;
